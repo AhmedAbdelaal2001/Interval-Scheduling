@@ -1,5 +1,6 @@
 #include "Request.h"
 #include <iostream>
+#include <list>
 #include <algorithm>
 #include <utility>
 
@@ -9,13 +10,13 @@ using namespace std;
 bool sortingComparsion(Request request1, Request request2) { return request1.getFinishTime() < request2.getFinishTime(); }
 
 //Predicate that will be used to determine the latest compatible request/s.
-bool prevCompatibleComparison(Request request, int startTime) { return request.getFinishTime() <= startTime; }
+bool nextCompatibleComparison(Request request, int finishTime) { return request.getStartTime() < finishTime; }
 
 //Predicate that will be used when reconstructing the sequence of requests giving the most optimized schedule.
-bool reconstructingComparison(pair<int, int> memoItem, int weight) { return memoItem.first != weight; }
+bool reconstructingComparison(pair<int, int> memoItem, int weight) { return memoItem.first == weight; }
 
-//Assigns a list to the request at index "requestIndex" containing the latest compatible request/s.
-void calcPrevCompatibles(Request* requestsArr, int arrSize, int requestIndex);
+//Finds the earliest compatible request that occurs after the one at position requestIndex.
+int nextCompatible(Request* requestsArr, int arrSize, int requestIndex);
 
 //Prompts the user for input.
 void requestsFromUser(Request* requestsArr, int n);
@@ -23,14 +24,14 @@ void requestsFromUser(Request* requestsArr, int n);
 //Uses dynamic programming to calculate the most optimized scheduling possible (maximizing the sum of weights.)
 //The memo will be used reconstruct the sequence of requests later in the main() function.
 //Complexity: O(n)
-int optimizeScheduling(Request* requestsArr, int index, pair<int, int>* memo);
+int optimizeScheduling(Request* requestsArr,int arrSize, int index, pair<int, int>* memo);
 
 
 //Solves the Weighted Intreval Scheduling problem. To calculate the maximum sum of compatible weights, the algorithm first sorts all
-//requests in ascending order of finishing time. Then for each request at position i, it calculate its weight + the optimized weight sum of all the
-//requests starting from the beginning of requestsArr until the latest previous compatible request, and compares that value to the optimized
-//weight sum of the requests ending at position i+1. Whenever a subproblem is solved, it is stored in the memo.
-//Complexity = O(nlogn), due to sorting.
+//requests in ascending order of finishing time. Then for each request at position i, it calculate its weight + the optimized weighted
+//sum of all the requests starting from the next compatible request until the end of requestArr, and compares that value to the 
+//optimized weighted sum of the requests starting at position i+1, returning the higher value between those two. Whenever a subproblem
+//is solved, it is stored in the memo. Complexity = O(nlogn), due to sorting.
 int main() {
 
 	int n, prevFinishTime = 0;
@@ -41,8 +42,9 @@ int main() {
 	Request* requestsArr = new Request[n];
 
 	requestsFromUser(requestsArr, n);
+	sort(requestsArr, requestsArr + n, sortingComparsion);
 
-	forward_list<int> optimumScheduling;
+	list<int> optimumScheduling;
 	int optimumSchedulingWeight;
 	pair<int, int>* memo = new pair<int, int>[n];
 	
@@ -52,26 +54,21 @@ int main() {
 		memo[i].second = -2;
 	}
 
-	optimumSchedulingWeight = optimizeScheduling(requestsArr, n - 1, memo);
+	optimumSchedulingWeight = optimizeScheduling(requestsArr, n, 0, memo);
 	cout << "\n-----------------------------------------------------------------------------------------------------------------\n";
 	cout << "\nMaximum Weight Of Compatible Requests = " << optimumSchedulingWeight << endl;
 	cout << "\nOptimum Compatible Set Of Requests: " << endl;
 
 	//Reconstructing the most optimized schedule from the memo.
 
-	while (n >= 0) {
-
-		pair<int, int>* parentRequest = lower_bound(memo, memo + n, optimumSchedulingWeight, reconstructingComparison);
-		int index = parentRequest - memo;
-
-		optimumSchedulingWeight -= requestsArr[index].getWeight();
-
-		optimumScheduling.push_front(index);
-		n = parentRequest->second;
+	int startingIndex = lower_bound(memo, memo + n, optimumSchedulingWeight, reconstructingComparison) - memo - 1;
 	
+	while (startingIndex < n) {
+		optimumScheduling.push_back(startingIndex);
+		startingIndex = memo[startingIndex].second;
 	}
 	
-	forward_list<int>::iterator it;
+	list<int>::iterator it;
 	for (it = optimumScheduling.begin(); it != optimumScheduling.end(); it++) {
 
 		cout << "\nRequest " << requestsArr[*it].getId() << ": " << endl;
@@ -84,23 +81,10 @@ int main() {
 	return 0;
 }
 
-void calcPrevCompatibles(Request* requestsArr, int arrSize, int requestIndex) {
+int nextCompatible(Request* requestsArr, int arrSize, int requestIndex) {
 
-	int prevIndex;
-	forward_list<int> prevCompatibles;
-	Request* prevRequest = lower_bound(requestsArr, requestsArr + arrSize, requestsArr[requestIndex].getStartTime(), prevCompatibleComparison) - 1;
-
-	prevIndex = prevRequest - requestsArr;
-	if (prevIndex >= 0) prevCompatibles.push_front(prevIndex);
-
-	while (prevIndex - 1 >= 0 && requestsArr[prevIndex].getFinishTime() == requestsArr[prevIndex - 1].getFinishTime()) {
-
-		prevCompatibles.push_front(prevIndex - 1);
-		prevIndex--;
-
-	}
-
-	requestsArr[requestIndex].setLatestCompatibles(prevCompatibles);
+	Request* nextRequest = lower_bound(requestsArr, requestsArr + arrSize, requestsArr[requestIndex].getFinishTime(), nextCompatibleComparison);
+	return nextRequest - requestsArr;
 
 }
 
@@ -122,41 +106,32 @@ void requestsFromUser(Request* requestsArr, int n) {
 		Request inputRequest(i + 1, startTime, finishTime, weight);
 		requestsArr[i] = inputRequest;
 	}
-
-	sort(requestsArr, requestsArr + n, sortingComparsion);
-	for (int i = 0; i < n; i++) calcPrevCompatibles(requestsArr, n, i);
-
 }
 
-int optimizeScheduling(Request* requestsArr, int index, pair<int, int>* memo) {
+int optimizeScheduling(Request* requestsArr,int arrSize, int index, pair<int, int>* memo) {
 
-	if (index == -1) return 0;
+	if (index >= arrSize) return 0;
 	if (memo[index].first != -1) return memo[index].first;
 
-	forward_list<int> latestCompatibles = requestsArr[index].getlatestCompatibles();
-	forward_list<int>::iterator it;
-	int maxPrevRequest = -1;
-	int maxWeight = -1;
+	int nextCompatibleIndex = nextCompatible(requestsArr, arrSize, index);
 
-	for (it = latestCompatibles.begin(); it != latestCompatibles.end(); it++) {
+	int firstRequestTaken = requestsArr[index].getWeight() + optimizeScheduling(requestsArr, arrSize,
+							nextCompatibleIndex, memo);
 
-		if (optimizeScheduling(requestsArr, *it, memo) > maxWeight) {
-			maxWeight = optimizeScheduling(requestsArr, *it, memo);
-			maxPrevRequest = *it;
-		}
-		else if (optimizeScheduling(requestsArr, *it, memo) == maxWeight)
-		{
-			maxPrevRequest = requestsArr[*it].getWeight() > requestsArr[maxPrevRequest].getWeight() ? *it : maxPrevRequest;
-		}
+	int firstRequestNotTaken = optimizeScheduling(requestsArr, arrSize, index + 1, memo);
 
+	if (firstRequestTaken > firstRequestNotTaken)
+	{
+		memo[index].first = firstRequestTaken;
+
+		while (memo[nextCompatibleIndex].second == -2) nextCompatibleIndex++;
+
+		memo[index].second = nextCompatibleIndex;
 	}
-
-	if (requestsArr[index].getWeight() + optimizeScheduling(requestsArr, maxPrevRequest, memo) > optimizeScheduling(requestsArr, index - 1, memo)) {
-		memo[index].first = requestsArr[index].getWeight() + optimizeScheduling(requestsArr, maxPrevRequest, memo);
-		memo[index].second = maxPrevRequest;
-	}
-	else memo[index].first = optimizeScheduling(requestsArr, index - 1, memo);
+	else memo[index].first = firstRequestNotTaken;
 
 	return memo[index].first;
+
+	
 
 }

@@ -25,9 +25,5 @@ void Request::setFinishTime(int finishTime) { this->finishTime = finishTime; }
 int Request::getFinishTime() const { return finishTime; }
 
 void Request::setWeight(int weight){ this->weight = weight; }
-int Request::getWeight() const { return weight; }
-
-void Request::setLatestCompatibles(std::forward_list<int>& latestCompatibles) { this->latestCompatibles = latestCompatibles; }
-
-std::forward_list<int>& Request::getlatestCompatibles(){ return latestCompatibles; }
+int Request::getWeight() const { return weight; }	
 
